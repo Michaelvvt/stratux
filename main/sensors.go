@@ -164,6 +164,7 @@ func tempAndPressureSender() {
 		mySituation.BaroLastMeasurementTime = stratuxClock.Time
 		mySituation.BaroTemperature = float32(temp)
 		mySituation.BaroPressureAltitude = float32(altitude)
+		mySituation.BaroPressure = float32(press)
 		if altLast < -2000 {
 			altLast = altitude // Initialize
 		}

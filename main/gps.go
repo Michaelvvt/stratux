@@ -97,6 +97,7 @@ type SituationData struct {
 	muBaro                  *sync.Mutex
 	BaroTemperature         float32
 	BaroPressureAltitude    float32
+	BaroPressure            float32 // raw barometric pressure in Pa (from BMP sensor)
 	BaroVerticalSpeed       float32
 	BaroLastMeasurementTime time.Time
 	BaroSourceType          uint8
