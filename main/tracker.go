@@ -480,7 +480,10 @@ func formatBaroPushString() string {
 	pressurePa := mySituation.BaroPressure                          // Pa, direct from BMP read
 	vspeedMps  := float64(mySituation.BaroVerticalSpeed) * 0.00508  // fpm → m/s (exact)
 	tempC      := mySituation.BaroTemperature                       // °C
-	msg := fmt.Sprintf("$PSTXB,%.1f,%.3f,%.1f", pressurePa, vspeedMps, tempC)
+	// 1 decimal is the firmware's parser resolution (Read_Float1) and also
+	// matches the OGN broadcast quantization (ClimbRate is stored in dm/s,
+	// pressure in qPa, temperature in dC — all 0.1-unit grids).
+	msg := fmt.Sprintf("$PSTXB,%.1f,%.1f,%.1f", pressurePa, vspeedMps, tempC)
 	return appendNmeaChecksum(msg) + "\r\n"
 }
 
