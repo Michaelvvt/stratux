@@ -164,7 +164,9 @@ func tempAndPressureSender() {
 		mySituation.BaroLastMeasurementTime = stratuxClock.Time
 		mySituation.BaroTemperature = float32(temp)
 		mySituation.BaroPressureAltitude = float32(altitude)
-		mySituation.BaroPressure = float32(press)
+		// BMP driver returns hPa (per common.CalcAltitude docstring); store in
+		// Pa to match the $PSTXB wire format and standard atmosphere conventions.
+		mySituation.BaroPressure = float32(press * 100)
 		if altLast < -2000 {
 			altLast = altitude // Initialize
 		}
