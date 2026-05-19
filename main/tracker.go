@@ -493,18 +493,29 @@ func formatBaroPushString() string {
 func baroPusherLoop() {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+	tickN := 0
 	for range ticker.C {
+		tickN++
 		if detectedTracker == nil || serialPort == nil {
+			if tickN%50 == 0 {
+				log.Printf("baroPusher: idle (tracker=%v serial=%v)", detectedTracker != nil, serialPort != nil)
+			}
 			continue
 		}
 		msg := formatBaroPushString()
 		if msg == "" {
+			if tickN%50 == 0 {
+				log.Printf("baroPusher: no baro data (BMPConnected=%v src=%d)", globalStatus.BMPConnected, mySituation.BaroSourceType)
+			}
 			continue
 		}
 		// Best-effort write; if the serial port has just gone away, the
 		// tracker connection manager will reset and we'll resume on
 		// reconnect. No need to log on every transient failure.
-		serialPort.Write([]byte(msg))
+		n, err := serialPort.Write([]byte(msg))
+		if tickN%50 == 0 {
+			log.Printf("baroPusher: wrote %d bytes (err=%v) msg=%q", n, err, msg)
+		}
 	}
 }
 
