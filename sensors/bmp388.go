@@ -16,23 +16,33 @@ type BMP388 struct {
 
 func NewBMP388(i2cbus *embd.I2CBus) (*BMP388, error) {
 
-	bmp := bmp388.BMP388{Address: bmp388.Address, Config: bmp388.Config{
+	// Probe both standard I2C addresses (set by SDO pin: low=0x76, high=0x77).
+	// The .Connected() check reads the CHIP_ID register and validates it's
+	// either BMP-388 (0x50) or BMP-390 (0x60), so it doubles as a chip-presence
+	// probe at each candidate address.
+	var workingAddr byte = 0
+	for _, candidate := range []byte{bmp388.Address, bmp388.AddressAlt} {
+		probe := bmp388.BMP388{Address: candidate, Bus: i2cbus}
+		for n := 0; n < 5; n++ {
+			if probe.Connected() {
+				workingAddr = candidate
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if workingAddr != 0 {
+			break
+		}
+	}
+	if workingAddr == 0 {
+		return nil, bmp388.ErrNotConnected
+	}
+
+	bmp := bmp388.BMP388{Address: workingAddr, Config: bmp388.Config{
 		Temperature: bmp388.Sampling8X,
 		Pressure:    bmp388.Sampling2X,
 		IIR:         bmp388.Coeff0,
-	}, Bus: i2cbus} //new sensor
-	// retry to connect until sensor connected
-	var connected bool
-	for n := 0; n < 5; n++ {
-		if bmp.Connected() {
-			connected = true
-		} else {
-			time.Sleep(time.Millisecond)
-		}
-	}
-	if !connected {
-		return nil, bmp388.ErrNotConnected
-	}
+	}, Bus: i2cbus}
 	err := bmp.Configure(bmp.Config)
 	if err != nil {
 		return nil, err
