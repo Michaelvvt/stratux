@@ -444,11 +444,73 @@ func (tracker *SoftRF) writeConfigFromSettings(serialPort *serial.Port) bool {
 	if len(messages) > 0 {
 		serialPort.Write([]byte(appendNmeaChecksum("$PSRFC,SAV") + "\r\n")) // Finally reboot
 	}
-	
+
 	return len(messages) > 0
 }
 
 
+/*
+	$PSTXB — Stratux Baro push.
+
+	Stratux's barometric sensor (BMP-280/388/390) reads pressure directly. This
+	pushes that reading to a connected tracker (e.g. T-Beam running OGN-Tracker
+	firmware) so the tracker can broadcast standard-altitude (and raw pressure)
+	in its OGN packets without needing its own BMP sensor on board.
+
+	Format:  $PSTXB,<pressure_Pa>,<vspeed_mps>,<temperature_C>*<cksum>
+
+	Units are SI floats on the wire. The receiving firmware does any internal
+	fixed-point scaling (e.g. qPa = Pa*4, dC = °C*10) at parse time.
+
+	Rate: 5 Hz. Tracker firmwares that do not implement the parser will simply
+	ignore unknown NMEA sentences per spec.
+*/
+
+// formatBaroPushString builds a $PSTXB NMEA sentence carrying current
+// barometric data. Returns an empty string if no valid baro source is
+// available, in which case the pusher skips this tick.
+func formatBaroPushString() string {
+	if !globalStatus.BMPConnected {
+		return ""
+	}
+	src := mySituation.BaroSourceType
+	if src == BARO_TYPE_NONE || src == BARO_TYPE_ADSBESTIMATE {
+		return ""
+	}
+	pressurePa := mySituation.BaroPressure                          // Pa, direct from BMP read
+	vspeedMps  := float64(mySituation.BaroVerticalSpeed) * 0.00508  // fpm → m/s (exact)
+	tempC      := mySituation.BaroTemperature                       // °C
+	// 1 decimal is the firmware's parser resolution (Read_Float1) and also
+	// matches the OGN broadcast quantization (ClimbRate is stored in dm/s,
+	// pressure in qPa, temperature in dC — all 0.1-unit grids).
+	msg := fmt.Sprintf("$PSTXB,%.1f,%.1f,%.1f", pressurePa, vspeedMps, tempC)
+	return appendNmeaChecksum(msg) + "\r\n"
+}
+
+// baroPusherLoop sends Stratux's BMP reading to a connected tracker at 5 Hz.
+// Self-managing: noops while no tracker is connected or while no baro data is
+// available. Started by init() at package load.
+func baroPusherLoop() {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for range ticker.C {
+		if detectedTracker == nil || serialPort == nil {
+			continue
+		}
+		msg := formatBaroPushString()
+		if msg == "" {
+			continue
+		}
+		// Best-effort write; if the serial port has just gone away, the
+		// tracker connection manager will reset and we'll resume on
+		// reconnect. No need to log on every transient failure.
+		serialPort.Write([]byte(msg))
+	}
+}
+
+func init() {
+	go baroPusherLoop()
+}
 
 
 
