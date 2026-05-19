@@ -2,7 +2,12 @@
 // The datasheet can be found here: https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp388-ds001.pdf
 package bmp388
 
-const Address byte = 0x76 // default I2C address
+// Address is the default I2C address (SDO pin low).
+// AddressAlt is the alternate I2C address (SDO pin high), used by many breakout
+// boards including Adafruit, Sparkfun, and Pimoroni BMP-388/390 modules.
+// NewBMP388 in the wrapper package auto-detects between the two at runtime.
+const Address    byte = 0x76
+const AddressAlt byte = 0x77
 
 const (
 	RegChipId  byte = 0x00 // useful for checking the connection
