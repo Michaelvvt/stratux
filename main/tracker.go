@@ -457,10 +457,19 @@ func (tracker *SoftRF) writeConfigFromSettings(serialPort *serial.Port) bool {
 	firmware) so the tracker can broadcast standard-altitude (and raw pressure)
 	in its OGN packets without needing its own BMP sensor on board.
 
-	Format:  $PSTXB,<pressure_Pa>,<vspeed_mps>,<temperature_C>*<cksum>
+	Format:  $PSTXB,<pressure_Pa>,<temperature_C>*<cksum>
 
-	Units are SI floats on the wire. The receiving firmware does any internal
-	fixed-point scaling (e.g. qPa = Pa*4, dC = °C*10) at parse time.
+	Vertical speed is intentionally omitted: the tracker firmware derives
+	ClimbRate from successive StdAltitude deltas in calcDifferentials() when
+	hasBaro=1 on consecutive positions. That gives the same climb-rate algorithm
+	used by the firmware's native BMP path, avoiding two parallel filters in the
+	chain (Stratux EWMA vs the firmware's GPS/baro fusion) and removing the
+	risk of startup-transient vspeed spikes tripping the firmware's flight
+	detection.
+
+	Units are SI floats on the wire with 1-decimal precision. The receiving
+	firmware does internal fixed-point scaling (qPa = Pa*4, dC = °C*10) at
+	parse time.
 
 	Rate: 5 Hz. Tracker firmwares that do not implement the parser will simply
 	ignore unknown NMEA sentences per spec.
@@ -477,13 +486,12 @@ func formatBaroPushString() string {
 	if src == BARO_TYPE_NONE || src == BARO_TYPE_ADSBESTIMATE {
 		return ""
 	}
-	pressurePa := mySituation.BaroPressure                          // Pa, direct from BMP read
-	vspeedMps  := float64(mySituation.BaroVerticalSpeed) * 0.00508  // fpm → m/s (exact)
-	tempC      := mySituation.BaroTemperature                       // °C
-	// 1 decimal is the firmware's parser resolution (Read_Float1) and also
-	// matches the OGN broadcast quantization (ClimbRate is stored in dm/s,
-	// pressure in qPa, temperature in dC — all 0.1-unit grids).
-	msg := fmt.Sprintf("$PSTXB,%.1f,%.1f,%.1f", pressurePa, vspeedMps, tempC)
+	pressurePa := mySituation.BaroPressure  // Pa, direct from BMP read
+	tempC      := mySituation.BaroTemperature // °C
+
+	// 1 decimal matches the firmware's parser resolution (Read_Float1) and the
+	// OGN broadcast quantization grids.
+	msg := fmt.Sprintf("$PSTXB,%.1f,%.1f", pressurePa, tempC)
 	return appendNmeaChecksum(msg) + "\r\n"
 }
 
@@ -493,29 +501,18 @@ func formatBaroPushString() string {
 func baroPusherLoop() {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
-	tickN := 0
 	for range ticker.C {
-		tickN++
 		if detectedTracker == nil || serialPort == nil {
-			if tickN%50 == 0 {
-				log.Printf("baroPusher: idle (tracker=%v serial=%v)", detectedTracker != nil, serialPort != nil)
-			}
 			continue
 		}
 		msg := formatBaroPushString()
 		if msg == "" {
-			if tickN%50 == 0 {
-				log.Printf("baroPusher: no baro data (BMPConnected=%v src=%d)", globalStatus.BMPConnected, mySituation.BaroSourceType)
-			}
 			continue
 		}
 		// Best-effort write; if the serial port has just gone away, the
 		// tracker connection manager will reset and we'll resume on
 		// reconnect. No need to log on every transient failure.
-		n, err := serialPort.Write([]byte(msg))
-		if tickN%50 == 0 {
-			log.Printf("baroPusher: wrote %d bytes (err=%v) msg=%q", n, err, msg)
-		}
+		_, _ = serialPort.Write([]byte(msg))
 	}
 }
 
